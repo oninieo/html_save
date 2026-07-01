@@ -1,1 +1,557 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>군중 밀집 위험 3D 시뮬레이터</title><style>*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:system-ui,sans-serif;background:#07182c;color:#eef7ff;overflow:hidden}body{display:grid;grid-template-columns:330px 1fr}.panel{padding:16px;background:#0a1421;border-right:1px solid #27445d;overflow:auto}.panel h1{font-size:20px;margin:0 0 8px}.panel p{font-size:12px;color:#a7bfd1;line-height:1.45}.box{background:#112238;border:1px solid #294a64;border-radius:12px;padding:12px;margin:12px 0}.row{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:12px;margin:8px 0}.row b{font-variant-numeric:tabular-nums}input{width:100%}.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stat{background:#091521;border:1px solid #294a64;border-radius:9px;padding:9px}.stat small{display:block;color:#9db5c8}.stat strong{font-size:19px}.risk{text-align:center;padding:12px;border-radius:10px;background:#2a260d;border:1px solid #facc15}.risk strong{font-size:23px}.stage{position:relative;background:radial-gradient(circle at 45% 20%,#1a4777,#061324 72%)}#c{position:absolute;inset:0}.tip{position:absolute;top:14px;right:14px;background:#08131fcc;border:1px solid #2f506a;border-radius:10px;padding:9px 11px;font-size:12px}.note{font-size:10px;color:#8199ab}.legend{font-size:11px;line-height:1.8}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}@media(max-width:850px){body{grid-template-columns:1fr}.panel{position:absolute;z-index:2;width:300px;max-width:86vw;height:100%;opacity:.96}.stage{height:100vh}}</style></head><body><aside class="panel"><h1>군중 밀집 위험 3D 시뮬레이터</h1><p>도시형 행사장의 인원, 출구, 통로 폭과 패닉 수준을 조절해 밀집 위험을 비교합니다.</p><div class="box"><div class="row"><span>참가 인원</span><b id="nv"></b></div><input id="n" type="range" min="100" max="2000" step="50" value="900"><div class="row"><span>통로 폭</span><b id="wv"></b></div><input id="w" type="range" min="3" max="14" step=".5" value="7"><div class="row"><span>출구 수</span><b id="ev"></b></div><input id="e" type="range" min="1" max="4" value="2"><div class="row"><span>출구 폭</span><b id="ewv"></b></div><input id="ew" type="range" min="1.2" max="6" step=".2" value="2.8"><div class="row"><span>패닉 비율</span><b id="pv"></b></div><input id="p" type="range" min="0" max="70" step="5" value="10"></div><div class="box"><div class="risk" id="risk"><strong id="grade">주의</strong><div id="desc">병목 구간 관리 필요</div></div><div class="stats" style="margin-top:8px"><div class="stat"><small>최대 밀도</small><strong id="den">0.0</strong> 명/㎡</div><div class="stat"><small>대피시간</small><strong id="time">0.0</strong> 분</div><div class="stat"><small>출구 부하율</small><strong id="load">0</strong>%</div><div class="stat"><small>고위험 인원</small><strong id="high">0</strong> 명</div></div></div><div class="box legend"><span class="dot" style="background:#22c55e"></span>안정　<span class="dot" style="background:#facc15"></span>주의<br><span class="dot" style="background:#f97316"></span>위험　<span class="dot" style="background:#ef4444"></span>매우 위험　<span class="dot" style="background:#a855f7"></span>임계</div><div class="note">※ 교육·정책 검토용 단순화 모델입니다. 실제 안전계획을 대체하지 않습니다.</div></aside><main class="stage"><div id="c"></div><div class="tip">드래그: 회전 · 휠: 확대/축소</div></main><script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script><script>const $=x=>document.getElementById(x),S={n:$('n'),w:$('w'),e:$('e'),ew:$('ew'),p:$('p')};let sc,cam,rend,people=[],mesh,exits=[],obs=[],t=0,drag=false,px=0,py=0,th=.85,ph=1.05,rad=50;function vals(){let q={n:+S.n.value,w:+S.w.value,e:+S.e.value,ew:+S.ew.value,p:+S.p.value/100};$('nv').textContent=q.n+'명';$('wv').textContent=q.w+'m';$('ev').textContent=q.e+'개';$('ewv').textContent=q.ew+'m';$('pv').textContent=Math.round(q.p*100)+'%';return q}function box(g,x,y,z,a,b,c,col){let m=new THREE.Mesh(new THREE.BoxGeometry(a,b,c),new THREE.MeshLambertMaterial({color:col}));m.position.set(x,y,z);g.add(m)}function city(){while(sc.children.length>3)sc.remove(sc.children[3]);let q=vals(),g=new THREE.Group();sc.add(g);box(g,0,-.25,0,70,.5,70,0x08233f);box(g,0,.02,-3,52,.12,4.2,0xf4f3ee);box(g,14,.02,8,4.2,.12,40,0xf4f3ee);box(g,0,.03,-9,24,.12,16,0x12385f);box(g,0,.05,8,q.w,.12,17,0x1b4c7c);for(let i=0;i<7;i++){let x=-27+i*8;box(g,x,3,-18,5,6+Math.random()*7,6,0xdce7f4);box(g,x+3,2.5,20,5,5+Math.random()*6,5,0x9fc8ff)}for(let i=0;i<6;i++){box(g,-22+i*8,1.2,-1,2,2.4,2,i%2?0xe7eff8:0x9bc8ff);obs.push({x:-22+i*8,z:-1,r:1.4})}exits=[];for(let i=0;i<q.e;i++){let x=-8+(16/(q.e+1))*(i+1);exits.push(new THREE.Vector3(x,0,22));box(g,x-q.ew/2,1,17,.18,2,.18,0xffffff);box(g,x+q.ew/2,1,17,.18,2,.18,0xffffff);box(g,x,2,17,q.ew+.3,.18,.18,0xffffff)}let geo=new THREE.CylinderGeometry(.12,.12,.5,6),mat=new THREE.MeshLambertMaterial({color:0x22c55e});mesh=new THREE.InstancedMesh(geo,mat,Math.min(420,Math.max(70,Math.round(q.n/4.2))));g.add(mesh);people=[];let d=new THREE.Object3D();for(let i=0;i<mesh.count;i++){let p={x:(Math.random()-.5)*20,z:-14+Math.random()*12,vx:0,vz:0};people.push(p);d.position.set(p.x,.35,p.z);d.updateMatrix();mesh.setMatrixAt(i,d.matrix);mesh.setColorAt(i,new THREE.Color(0x22c55e))}mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true}function risk(q,dens,high){let cap=q.e*q.ew*78,load=Math.min(300,q.n/cap*100*(1+q.p*.8)),ev=q.n/cap*(1+Math.max(0,load-100)/120+q.p*.7);$('den').textContent=dens.toFixed(1);$('time').textContent=ev.toFixed(1);$('load').textContent=Math.round(load);$('high').textContent=Math.round(high);let a=dens<2.5&&load<80?['안정','원활한 이동 예상','#22c55e','#10271a']:dens<4&&load<110?['주의','병목 구간 관리 필요','#facc15','#2a260d']:dens<5.5&&load<150?['위험','출구 분산과 유입 통제 필요','#f97316','#301b0d']:dens<7.5&&load<220?['매우 위험','즉시 군중 흐름 분산 필요','#ef4444','#321013']:['임계','압사 위험 가능성: 긴급 통제','#c084fc','#24102f'];$('grade').textContent=a[0];$('desc').textContent=a[1];$('grade').style.color=a[2];$('risk').style.background=a[3];$('risk').style.borderColor=a[2]}function step(dt){let q=vals(),d=new THREE.Object3D(),bins={};for(let p of people){let k=Math.round(p.x/2)+','+Math.round(p.z/2);bins[k]=(bins[k]||0)+1}let max=0,high=0,scale=q.n/people.length;for(let i=0;i<people.length;i++){let p=people[i],e=exits.reduce((a,b)=>(p.x-b.x)**2+(p.z-b.z)**2<(p.x-a.x)**2+(p.z-a.z)**2?b:a,exits[0]),dx=e.x-p.x,dz=e.z-p.z,l=Math.hypot(dx,dz)||1,den=(bins[Math.round(p.x/2)+','+Math.round(p.z/2)]||1)*scale/4;max=Math.max(max,den);if(den>5.5)high+=scale;let speed=1.1*(1+q.p*.5);p.vx+=(dx/l*speed-p.vx)*dt*2;p.vz+=(dz/l*speed-p.vz)*dt*2;if(p.z>0&&Math.abs(p.x)>q.w/2)p.vx+=-Math.sign(p.x)*dt*2;p.x+=p.vx*dt;p.z+=p.vz*dt;if(p.z>23){p.z=-14;p.x=(Math.random()-.5)*20}let col=den<2?0x22c55e:den<4?0xfacc15:den<5.5?0xf97316:den<7?0xef4444:0xa855f7;d.position.set(p.x,.35,p.z);d.rotation.y=Math.atan2(p.vx,p.vz);d.updateMatrix();mesh.setMatrixAt(i,d.matrix);mesh.setColorAt(i,new THREE.Color(col))}mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;risk(q,max,high)}function init(){sc=new THREE.Scene();sc.background=new THREE.Color(0x071a32);cam=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,.1,300);rend=new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance'});rend.setPixelRatio(Math.min(devicePixelRatio,1.25));rend.setSize(document.querySelector('.stage').clientWidth,innerHeight);$('c').appendChild(rend.domElement);sc.add(new THREE.HemisphereLight(0xffffff,0x25415d,1.2));let l=new THREE.DirectionalLight(0xffffff,.8);l.position.set(20,35,15);sc.add(l);let base=new THREE.Group();sc.add(base);city();Object.values(S).forEach(x=>x.oninput=city);let c=rend.domElement;c.onpointerdown=e=>{drag=true;px=e.clientX;py=e.clientY};c.onpointerup=()=>drag=false;c.onpointermove=e=>{if(!drag)return;th-=(e.clientX-px)*.008;ph=Math.max(.5,Math.min(1.4,ph+(e.clientY-py)*.006));px=e.clientX;py=e.clientY};c.onwheel=e=>{e.preventDefault();rad=Math.max(28,Math.min(80,rad+e.deltaY*.03))};addEventListener('resize',()=>{cam.aspect=document.querySelector('.stage').clientWidth/innerHeight;cam.updateProjectionMatrix();rend.setSize(document.querySelector('.stage').clientWidth,innerHeight)});let last=performance.now();(function loop(now){requestAnimationFrame(loop);let dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;step(dt);cam.position.set(rad*Math.sin(ph)*Math.sin(th),rad*Math.cos(ph),rad*Math.sin(ph)*Math.cos(th));cam.lookAt(0,2,0);rend.render(sc,cam)})(last)}init()</script></body></html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>정부 안내서비스 통합검색</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<style>
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2') format('woff2-variations');
+  font-weight: 45 920;
+}
+
+:root{
+  --navy: #14294B;
+  --navy-2: #1E3A66;
+  --blue: #2C5FD8;
+  --blue-dark: #1D46AE;
+  --bg: #EEF2F8;
+  --card: #FFFFFF;
+  --border: #D7DFEC;
+  --text: #16213A;
+  --text-sub: #5B6B85;
+  --line: #C7D2E4;
+  --ok: #1D6E4B;
+  --ok-bg: #E4F3EC;
+  --no: #A03A2C;
+  --no-bg: #FAE7E2;
+  --mono: 'IBM Plex Mono', 'Roboto Mono', ui-monospace, monospace;
+}
+
+*{ box-sizing: border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family: 'Pretendard', -apple-system, 'Malgun Gothic', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+a{ color: inherit; }
+
+/* ===== Header ===== */
+.gov-header{
+  background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+  color: #fff;
+  padding: 34px 24px 30px;
+  border-bottom: 4px solid var(--blue);
+}
+.gov-header-inner{
+  max-width: 980px;
+  margin: 0 auto;
+}
+.gov-eyebrow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #AFC4EC;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+.gov-eyebrow::before{
+  content:"";
+  width: 7px; height: 7px;
+  background: #6FE3B0;
+  border-radius: 50%;
+  display:inline-block;
+  box-shadow: 0 0 0 3px rgba(111,227,176,0.18);
+}
+h1{
+  font-size: clamp(24px, 3.4vw, 32px);
+  font-weight: 800;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.gov-sub{
+  font-size: 14.5px;
+  color: #C9D6EF;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ===== Controls ===== */
+.controls-wrap{
+  max-width: 980px;
+  margin: -20px auto 0;
+  padding: 0 24px;
+  position: relative;
+  z-index: 5;
+}
+.controls-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 8px 24px rgba(20,41,75,0.08);
+}
+.search-row{
+  display:flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.search-box{
+  flex: 1;
+  position: relative;
+  display:flex;
+  align-items:center;
+}
+.search-box svg{
+  position:absolute;
+  left: 13px;
+  width: 17px; height: 17px;
+  color: var(--text-sub);
+  pointer-events:none;
+}
+#searchInput{
+  width: 100%;
+  padding: 11px 14px 11px 38px;
+  font-size: 15px;
+  border: 1.5px solid var(--line);
+  border-radius: 7px;
+  background: #FBFCFE;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+#searchInput:focus{
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(44,95,216,0.14);
+  background: #fff;
+}
+#searchInput::placeholder{ color: #9AA7BE; }
+
+.clear-btn{
+  border: 1.5px solid var(--line);
+  background: #FBFCFE;
+  color: var(--text-sub);
+  border-radius: 7px;
+  padding: 0 16px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.clear-btn:hover{
+  background: #EEF2F8;
+  color: var(--text);
+  border-color: #B9C6DC;
+}
+
+.filter-label{
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-sub);
+  margin: 0 0 8px;
+  letter-spacing: 0.02em;
+}
+.chip-row{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.chip{
+  border: 1.5px solid var(--line);
+  background: #FBFCFE;
+  color: var(--text);
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .13s;
+  line-height: 1.4;
+}
+.chip:hover{ border-color: var(--blue); }
+.chip.active{
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+.chip .chip-count{
+  font-weight: 700;
+  opacity: 0.75;
+  margin-left: 3px;
+  font-size: 12px;
+}
+
+/* ===== Result meta ===== */
+.result-meta{
+  max-width: 980px;
+  margin: 18px auto 10px;
+  padding: 0 24px;
+  display:flex;
+  align-items:baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.result-count{
+  font-size: 14px;
+  color: var(--text-sub);
+}
+.result-count strong{
+  color: var(--navy);
+  font-size: 17px;
+  font-weight: 800;
+  margin-right: 2px;
+}
+.sort-hint{
+  font-size: 12.5px;
+  color: #8B98B2;
+}
+
+/* ===== List ===== */
+.list-wrap{
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 24px 60px;
+}
+.card-list{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.svc-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--cat-color, var(--blue));
+  border-radius: 8px;
+  padding: 15px 18px;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 16px;
+  transition: box-shadow .15s, transform .1s;
+}
+.svc-card:hover{
+  box-shadow: 0 4px 14px rgba(20,41,75,0.09);
+}
+.svc-main{
+  min-width: 0;
+}
+.svc-name{
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.svc-name mark{
+  background: #FFE38A;
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.svc-meta{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-sub);
+}
+.svc-meta .dot{
+  width: 3px; height:3px;
+  background: #C0CBDF;
+  border-radius: 50%;
+}
+.tag{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.tag-cat{
+  background: var(--cat-bg, #E7EEFB);
+  color: var(--cat-color, var(--blue-dark));
+}
+.tag-online{
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.tag-offline{
+  background: var(--no-bg);
+  color: var(--no);
+}
+.tag-online::before, .tag-offline::before{
+  content:"";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.org-col{
+  font-size: 13px;
+  color: var(--text-sub);
+  min-width: 96px;
+  text-align: left;
+}
+.org-col .org-label{
+  display:block;
+  font-size: 10.5px;
+  color: #9AA7BE;
+  font-weight: 700;
+  margin-bottom: 2px;
+  letter-spacing: 0.03em;
+}
+.call-btn{
+  display:flex;
+  align-items:center;
+  gap: 7px;
+  background: var(--navy);
+  color: #fff;
+  border-radius: 7px;
+  padding: 9px 14px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.call-btn:hover{ background: var(--blue-dark); }
+.call-btn svg{ width: 14px; height: 14px; flex-shrink:0; }
+
+.empty-state{
+  text-align:center;
+  padding: 70px 20px;
+  color: var(--text-sub);
+}
+.empty-state .icon{
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+.empty-state p{ margin: 4px 0; font-size: 14.5px; }
+.empty-state .em-sub{ font-size: 13px; color: #9AA7BE; }
+
+footer{
+  text-align:center;
+  font-size: 12px;
+  color: #9AA7BE;
+  padding: 18px 24px 34px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 720px){
+  .svc-card{
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .org-col{ text-align: left; }
+  .call-btn{ width: fit-content; }
+  .search-row{ flex-wrap: wrap; }
+}
+
+/* focus visibility */
+.chip:focus-visible, .clear-btn:focus-visible, .call-btn:focus-visible, #searchInput:focus-visible{
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="gov-header">
+  <div class="gov-header-inner">
+    <div class="gov-eyebrow">정부 안내서비스 통합검색</div>
+    <h1>필요한 안내서비스를 빠르게 찾아보세요</h1>
+    <p class="gov-sub">서비스명으로 검색하거나 분야를 선택하면 소관기관과 콜센터 번호를 바로 확인할 수 있습니다.</p>
+  </div>
+</header>
+
+<div class="controls-wrap">
+  <div class="controls-card">
+    <div class="search-row">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="searchInput" placeholder="서비스명을 입력하세요 (예: 기초연금, 전입신고)" autocomplete="off">
+      </div>
+      <button class="clear-btn" id="resetBtn" type="button">초기화</button>
+    </div>
+    <div class="filter-label">안내분야</div>
+    <div class="chip-row" id="chipRow"></div>
+  </div>
+</div>
+
+<div class="result-meta">
+  <div class="result-count"><strong id="countNum">0</strong>건의 안내서비스</div>
+  <div class="sort-hint">서비스ID 순</div>
+</div>
+
+<div class="list-wrap">
+  <div class="card-list" id="cardList"></div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <div class="icon">⌕</div>
+    <p>검색 결과가 없습니다.</p>
+    <p class="em-sub">다른 검색어나 분야를 선택해 보세요.</p>
+  </div>
+</div>
+
+<footer>총 24건의 안내서비스 · 온라인안내 가능 여부는 소관기관 사정에 따라 변경될 수 있습니다.</footer>
+
+<script>
+const DATA = [
+  {"서비스ID":"A001","서비스명":"주민등록 발급 안내","안내분야":"민원","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1374"},
+  {"서비스ID":"A002","서비스명":"전입신고 안내","안내분야":"민원","소관기관":"보건복지부","온라인안내":"가능","콜센터":"1352"},
+  {"서비스ID":"A003","서비스명":"인감증명 안내","안내분야":"민원","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1313"},
+  {"서비스ID":"A004","서비스명":"민원접수 안내","안내분야":"민원","소관기관":"교육부","온라인안내":"가능","콜센터":"1341"},
+  {"서비스ID":"A005","서비스명":"정부24 이용 안내","안내분야":"민원","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1356"},
+  {"서비스ID":"A006","서비스명":"기초연금 안내","안내분야":"복지","소관기관":"행정안전부","온라인안내":"불가","콜센터":"1386"},
+  {"서비스ID":"A007","서비스명":"복지급여 안내","안내분야":"복지","소관기관":"고용노동부","온라인안내":"가능","콜센터":"1319"},
+  {"서비스ID":"A008","서비스명":"장애인지원 안내","안내분야":"복지","소관기관":"보건복지부","온라인안내":"가능","콜센터":"1337"},
+  {"서비스ID":"A009","서비스명":"아동수당 안내","안내분야":"복지","소관기관":"지자체","온라인안내":"가능","콜센터":"1326"},
+  {"서비스ID":"A010","서비스명":"지방세 납부 안내","안내분야":"세금","소관기관":"보건복지부","온라인안내":"가능","콜센터":"1357"},
+  {"서비스ID":"A011","서비스명":"취득세 안내","안내분야":"세금","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1341"},
+  {"서비스ID":"A012","서비스명":"재산세 안내","안내분야":"세금","소관기관":"지자체","온라인안내":"가능","콜센터":"1317"},
+  {"서비스ID":"A013","서비스명":"자동차등록 안내","안내분야":"교통","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1399"},
+  {"서비스ID":"A014","서비스명":"운전면허 안내","안내분야":"교통","소관기관":"보건복지부","온라인안내":"불가","콜센터":"1357"},
+  {"서비스ID":"A015","서비스명":"주정차단속 안내","안내분야":"교통","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1367"},
+  {"서비스ID":"A016","서비스명":"재난지원금 안내","안내분야":"재난","소관기관":"행정안전부","온라인안내":"불가","콜센터":"1356"},
+  {"서비스ID":"A017","서비스명":"대피소 안내","안내분야":"재난","소관기관":"국세청","온라인안내":"가능","콜센터":"1359"},
+  {"서비스ID":"A018","서비스명":"안전신고 안내","안내분야":"재난","소관기관":"국세청","온라인안내":"가능","콜센터":"1357"},
+  {"서비스ID":"A019","서비스명":"국민취업지원 안내","안내분야":"일자리","소관기관":"지자체","온라인안내":"가능","콜센터":"1386"},
+  {"서비스ID":"A020","서비스명":"구직급여 안내","안내분야":"일자리","소관기관":"국토교통부","온라인안내":"불가","콜센터":"1350"},
+  {"서비스ID":"A021","서비스명":"청년일자리 안내","안내분야":"일자리","소관기관":"지자체","온라인안내":"가능","콜센터":"1392"},
+  {"서비스ID":"A022","서비스명":"평생교육 안내","안내분야":"교육","소관기관":"국토교통부","온라인안내":"가능","콜센터":"1379"},
+  {"서비스ID":"A023","서비스명":"학자금 안내","안내분야":"교육","소관기관":"지자체","온라인안내":"가능","콜센터":"1324"},
+  {"서비스ID":"A024","서비스명":"교육비지원 안내","안내분야":"교육","소관기관":"행정안전부","온라인안내":"가능","콜센터":"1368"}
+];
+
+const CATEGORY_COLORS = {
+  "민원": { color: "#1D46AE", bg: "#E7EEFB" },
+  "복지": { color: "#1D6E4B", bg: "#E4F3EC" },
+  "세금": { color: "#8A5A0E", bg: "#FBEFDD" },
+  "교통": { color: "#5B3FA6", bg: "#EEE8FA" },
+  "재난": { color: "#A03A2C", bg: "#FAE7E2" },
+  "일자리": { color: "#0E6E7A", bg: "#DDF1F3" },
+  "교육": { color: "#2C5FD8", bg: "#E7EEFB" }
+};
+
+const CATEGORY_ORDER = ["민원","복지","세금","교통","재난","일자리","교육"];
+
+let state = { query: "", category: "전체" };
+
+function buildChips(){
+  const chipRow = document.getElementById('chipRow');
+  const counts = { "전체": DATA.length };
+  CATEGORY_ORDER.forEach(c => counts[c] = DATA.filter(d => d.안내분야 === c).length);
+
+  const chips = ["전체", ...CATEGORY_ORDER];
+  chipRow.innerHTML = chips.map(c => `
+    <button class="chip ${c === state.category ? 'active' : ''}" data-cat="${c}" type="button">
+      ${c}<span class="chip-count">${counts[c]}</span>
+    </button>
+  `).join('');
+
+  chipRow.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.category = btn.dataset.cat;
+      render();
+    });
+  });
+}
+
+function highlight(text, query){
+  if(!query) return escapeHtml(text);
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if(idx === -1) return escapeHtml(text);
+  const before = escapeHtml(text.slice(0, idx));
+  const match = escapeHtml(text.slice(idx, idx + query.length));
+  const after = escapeHtml(text.slice(idx + query.length));
+  return `${before}<mark>${match}</mark>${after}`;
+}
+
+function escapeHtml(str){
+  return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function render(){
+  const q = state.query.trim().toLowerCase();
+  const filtered = DATA.filter(item => {
+    const catOk = state.category === "전체" || item.안내분야 === state.category;
+    const queryOk = !q || item.서비스명.toLowerCase().includes(q);
+    return catOk && queryOk;
+  });
+
+  document.getElementById('countNum').textContent = filtered.length;
+
+  const listEl = document.getElementById('cardList');
+  const emptyEl = document.getElementById('emptyState');
+
+  if(filtered.length === 0){
+    listEl.innerHTML = "";
+    emptyEl.style.display = "block";
+  } else {
+    emptyEl.style.display = "none";
+    listEl.innerHTML = filtered.map(item => {
+      const cat = CATEGORY_COLORS[item.안내분야] || { color:"#2C5FD8", bg:"#E7EEFB" };
+      const isOnline = item.온라인안내 === "가능";
+      return `
+        <div class="svc-card" style="--cat-color:${cat.color}; --cat-bg:${cat.bg};">
+          <div class="svc-main">
+            <p class="svc-name">${highlight(item.서비스명, state.query)}</p>
+            <div class="svc-meta">
+              <span>${item.서비스ID}</span>
+            </div>
+          </div>
+          <span class="tag tag-cat">${item.안내분야}</span>
+          <span class="tag ${isOnline ? 'tag-online' : 'tag-offline'}">온라인안내 ${item.온라인안내}</span>
+          <div class="org-col">
+            <span class="org-label">소관기관</span>
+            ${escapeHtml(item.소관기관)}
+          </div>
+          <a class="call-btn" href="tel:${item.콜센터}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            ${item.콜센터}
+          </a>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  state.query = e.target.value;
+  render();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  state.query = "";
+  state.category = "전체";
+  document.getElementById('searchInput').value = "";
+  buildChips();
+  render();
+});
+
+buildChips();
+render();
+</script>
+
+</body>
+</html>
