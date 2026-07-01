@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>행사장 압사·군중 밀집 위험 3D 시뮬레이터 - 도시형 경량 버전</title>
+  <style>
+    :root{
+      --bg:#071a32; --bg2:#0b2644; --panel:#0a1727; --panel2:#102237; --line:#21425d;
+      --text:#ecf5ff; --muted:#9bb6ca; --accent:#74c0ff; --ok:#22c55e; --warn:#facc15; --danger:#ef4444; --critical:#a855f7;
+      --road:#f8f8f5; --road2:#ecece7; --building:#dce7f4; --building2:#9fc8ff; --building3:#7eb4ff;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg2),var(--bg));color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+    body{display:grid;grid-template-columns:360px 1fr}
+    .sidebar{height:100vh;overflow:auto;background:linear-gradient(180deg,#08111d,#0b1724);border-right:1px solid var(--line);padding:18px}
+    h1{font-size:20px;margin:0 0 6px}
+    .sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:16px}
+    .section{background:rgba(16,34,55,.9);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 8px 22px rgba(0,0,0,.16)}
+    .section h2{font-size:13px;margin:0 0 12px;color:#dfefff}
+    .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin:10px 0}
+    .row label{font-size:12px;color:#d2e3f0}
+    .val{font-size:12px;min-width:76px;text-align:right;color:#fff;font-variant-numeric:tabular-nums}
+    input[type=range]{width:100%;accent-color:#74c0ff}
+    select,button{width:100%;background:#091420;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+    button{cursor:pointer;font-weight:700}
+    button:hover{border-color:#4f88ad}
+    .primary-btn{background:#0d3550;border-color:#176b97}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .stat{background:#091420;border:1px solid var(--line);border-radius:10px;padding:10px}
+    .stat span{font-size:11px;color:var(--muted)} .stat b{display:block;font-size:18px;margin-top:3px}
+    .riskbox{border-radius:12px;padding:14px;text-align:center;border:1px solid transparent;background:#10271a}
+    .riskbox .grade{font-size:24px;font-weight:900;letter-spacing:.03em}
+    .riskbox .desc{font-size:12px;margin-top:4px;color:#dce8ef}
+    .legend{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+    .legend i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:4px}
+    .stage{position:relative;min-width:0;height:100vh;background:radial-gradient(circle at 50% 25%,#173e6b,#061425 72%)}
+    #canvasWrap{position:absolute;inset:0}
+    canvas{display:block;width:100%;height:100%}
+    .topbar{position:absolute;left:18px;right:18px;top:16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none}
+    .badge{pointer-events:auto;background:rgba(8,18,27,.72);backdrop-filter:blur(10px);border:1px solid rgba(152,210,255,.25);padding:10px 12px;border-radius:12px;font-size:12px;color:#d7ebfa}
+    .hint{position:absolute;right:18px;bottom:16px;background:rgba(8,18,27,.74);padding:10px 12px;border:1px solid var(--line);border-radius:12px;font-size:11px;color:var(--muted);max-width:360px}
+    .alert{position:absolute;left:50%;top:18px;transform:translateX(-50%);padding:10px 18px;border-radius:999px;font-weight:800;font-size:13px;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.5);display:none}
+    .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#071018;z-index:10;font-size:14px;color:#dcecf5;text-align:center;padding:24px}
+    .spinner{width:44px;height:44px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#8ad0ff;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .foot{font-size:10px;color:#8296a5;line-height:1.45}
+    .perf{font-size:11px;color:#b7cad9;margin-top:8px;line-height:1.45}
+    .menu{display:none;position:absolute;left:14px;top:14px;z-index:30;width:auto;padding:9px 12px}
+    @media(max-width:900px){body{grid-template-columns:1fr}.sidebar{position:absolute;z-index:20;width:330px;max-width:88vw;transform:translateX(-100%);transition:.25s}.sidebar.open{transform:translateX(0)}.menu{display:block!important}}
+  </style>
+</head>
+<body>
+  <button class="menu" id="menuBtn">설정</button>
+  <aside class="sidebar" id="sidebar">
+    <h1>군중 밀집 위험 3D 시뮬레이터</h1>
+    <div class="sub">참고 이미지의 이소메트릭 도시 스타일을 반영한 경량 3D 버전입니다. 행사 종료·출입구 병목·패닉 상황에서 군중 밀집과 압사 위험을 비교합니다.</div>
+
+    <div class="section">
+      <h2>시나리오</h2>
+      <select id="preset">
+        <option value="normal">일반 행사 운영</option>
+        <option value="ending">행사 종료 후 일시 유출</option>
+        <option value="blocked">주 출구 일부 폐쇄</option>
+        <option value="panic">돌발 패닉·역방향 이동</option>
+        <option value="narrow">좁은 골목형 행사장</option>
+      </select>
+      <div class="perf">성능 개선: OrbitControls 제거, 사람·격자 수 축소, 그림자 비활성화, 저해상도 렌더링 적용</div>
+    </div>
+
+    <div class="section">
+      <h2>군중 조건</h2>
+      <div class="row"><label>참가 인원</label><span class="val" id="crowdVal"></span></div><input id="crowd" type="range" min="100" max="2000" step="50" value="900">
+      <div class="row"><label>유출 집중도</label><span class="val" id="surgeVal"></span></div><input id="surge" type="range" min="10" max="100" step="5" value="55">
+      <div class="row"><label>평균 이동속도</label><span class="val" id="speedVal"></span></div><input id="speed" type="range" min="0.5" max="2.2" step="0.1" value="1.2">
+      <div class="row"><label>패닉·밀어붙임 비율</label><span class="val" id="panicVal"></span></div><input id="panic" type="range" min="0" max="70" step="5" value="10">
+      <div class="row"><label>역방향 이동 비율</label><span class="val" id="reverseVal"></span></div><input id="reverse" type="range" min="0" max="40" step="5" value="5">
+    </div>
+
+    <div class="section">
+      <h2>공간·출구 조건</h2>
+      <div class="row"><label>행사장 폭</label><span class="val" id="widthVal"></span></div><input id="width" type="range" min="12" max="40" step="1" value="26">
+      <div class="row"><label>주 통로 폭</label><span class="val" id="corridorVal"></span></div><input id="corridor" type="range" min="3" max="14" step="0.5" value="7">
+      <div class="row"><label>운영 출구 수</label><span class="val" id="exitVal"></span></div><input id="exitCount" type="range" min="1" max="4" step="1" value="2">
+      <div class="row"><label>출구 1개당 폭</label><span class="val" id="exitWidthVal"></span></div><input id="exitWidth" type="range" min="1.2" max="6" step="0.2" value="2.8">
+      <div class="row"><label>장애물·시설물 비율</label><span class="val" id="obstacleVal"></span></div><input id="obstacle" type="range" min="0" max="40" step="5" value="10">
+      <div class="row"><label>경사도</label><span class="val" id="slopeVal"></span></div><input id="slope" type="range" min="0" max="12" step="1" value="2">
+    </div>
+
+    <div class="section">
+      <div class="grid2">
+        <button class="primary-btn" id="toggleBtn">일시정지</button>
+        <button id="resetBtn">재시작</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>실시간 위험지표</h2>
+      <div class="riskbox" id="riskBox"><div class="grade" id="riskGrade">주의</div><div class="desc" id="riskDesc">병목 구간 관리 필요</div></div>
+      <div class="stats" style="margin-top:10px">
+        <div class="stat"><span>최대 밀도</span><b id="densityStat">0.0</b><small>명/㎡</small></div>
+        <div class="stat"><span>예상 대피시간</span><b id="evacStat">0</b><small>분</small></div>
+        <div class="stat"><span>출구 부하율</span><b id="loadStat">0</b><small>%</small></div>
+        <div class="stat"><span>고위험 인원</span><b id="highStat">0</b><small>명</small></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>밀도 색상</h2>
+      <div class="legend">
+        <span><i style="background:#22c55e"></i>안정</span>
+        <span><i style="background:#facc15"></i>주의</span>
+        <span><i style="background:#f97316"></i>위험</span>
+        <span><i style="background:#ef4444"></i>매우 위험</span>
+        <span><i style="background:#a855f7"></i>임계</span>
+      </div>
+    </div>
+
+    <div class="foot">※ 본 시뮬레이터는 교육·정책 검토용 단순화 모델입니다. 실제 행사 안전계획은 현장 실측, 관련 법령, 전문 군중안전 분석과 지자체·경찰·소방 협의를 거쳐야 합니다.</div>
+  </aside>
+
+  <main class="stage">
+    <div id="canvasWrap"></div>
+    <div class="loading" id="loading"><div class="spinner"></div><div>경량 3D 엔진과 도시 장면을 준비하고 있습니다…</div><div style="font-size:12px;color:#9eb6c7">이 버전은 외부 스크립트를 1개만 불러오고, 장면 복잡도를 줄여 더 빠르게 시작됩니다.</div></div>
+    <div class="topbar">
+      <div class="badge">드래그: 회전 · 휠: 확대/축소</div>
+      <div class="badge" id="timeBadge">경과 00:00</div>
+    </div>
+    <div class="alert" id="alertBanner">위험 밀집 발생</div>
+    <div class="hint">도시 배치는 참고 이미지의 이소메트릭 느낌을 반영했습니다. 사람 색상은 해당 구역의 순간 밀집도를 의미합니다.</div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const els = {
+      crowd:$('crowd'), surge:$('surge'), speed:$('speed'), panic:$('panic'), reverse:$('reverse'),
+      width:$('width'), corridor:$('corridor'), exitCount:$('exitCount'), exitWidth:$('exitWidth'), obstacle:$('obstacle'), slope:$('slope'),
+      preset:$('preset'), toggle:$('toggleBtn'), reset:$('resetBtn')
+    };
+
+    let scene, camera, renderer, clock;
+    let people=[], crowdMesh, heatCells=[], obstacles=[], exits=[], running=true, simTime=0;
+    const MAX_AGENTS = 420;
+    const gridN = 14;
+    let params = {};
+    const stage = document.querySelector('.stage');
+
+    const orbit = {
+      theta: 0.88,
+      phi: 1.02,
+      radius: 52,
+      target: new THREE.Vector3(0,2,0),
+      dragging:false, px:0, py:0
+    };
+
+    function readParams(){
+      params={
+        crowd:+els.crowd.value, surge:+els.surge.value/100, speed:+els.speed.value,
+        panic:+els.panic.value/100, reverse:+els.reverse.value/100, width:+els.width.value,
+        corridor:+els.corridor.value, exitCount:+els.exitCount.value, exitWidth:+els.exitWidth.value,
+        obstacle:+els.obstacle.value/100, slope:+els.slope.value
+      };
+      $('crowdVal').textContent=params.crowd.toLocaleString()+'명';
+      $('surgeVal').textContent=Math.round(params.surge*100)+'%';
+      $('speedVal').textContent=params.speed.toFixed(1)+' m/s';
+      $('panicVal').textContent=Math.round(params.panic*100)+'%';
+      $('reverseVal').textContent=Math.round(params.reverse*100)+'%';
+      $('widthVal').textContent=params.width+' m';
+      $('corridorVal').textContent=params.corridor.toFixed(1)+' m';
+      $('exitVal').textContent=params.exitCount+'개';
+      $('exitWidthVal').textContent=params.exitWidth.toFixed(1)+' m';
+      $('obstacleVal').textContent=Math.round(params.obstacle*100)+'%';
+      $('slopeVal').textContent=params.slope+'°';
+    }
+
+    function init(){
+      if(!window.THREE){
+        $('loading').innerHTML = 'Three.js를 불러오지 못했습니다. 인터넷 연결 또는 CDN 접근 가능 여부를 확인해 주세요.';
+        return;
+      }
+      readParams();
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x071a32);
+      camera = new THREE.PerspectiveCamera(44, stage.clientWidth / innerHeight, 0.1, 500);
+      renderer = new THREE.WebGLRenderer({antialias:false, powerPreference:'high-performance'});
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
+      renderer.setSize(stage.clientWidth, innerHeight);
+      $('canvasWrap').appendChild(renderer.domElement);
+      clock = new THREE.Clock();
+
+      const hemi = new THREE.HemisphereLight(0xf3f7ff, 0x29405b, 1.15); scene.add(hemi);
+      const sun = new THREE.DirectionalLight(0xffffff, 0.82); sun.position.set(25,40,15); scene.add(sun);
+      const fill = new THREE.DirectionalLight(0x92ccff, 0.25); fill.position.set(-20,12,-20); scene.add(fill);
+
+      bindPointerControls();
+      bindUI();
+      buildScene();
+      updateCamera();
+      $('loading').style.display='none';
+      animate();
+    }
+
+    function clearDynamic(){
+      ['envGroup','heatGroup','peopleGroup'].forEach(name=>{
+        const old = scene.getObjectByName(name);
+        if(old){
+          scene.remove(old);
+          old.traverse(o=>{
+            if(o.geometry) o.geometry.dispose();
+            if(o.material){
+              if(Array.isArray(o.material)) o.material.forEach(m=>m.dispose());
+              else o.material.dispose();
+            }
+          });
+        }
+      });
+    }
+
+    function makeMat(color){
+      return new THREE.MeshLambertMaterial({color});
+    }
+
+    function addBox(group,x,y,z,w,h,d,color){
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), makeMat(color));
+      m.position.set(x,y,z); group.add(m); return m;
+    }
+
+    function addRoadStripe(group, x, z, count, horizontal=true){
+      for(let i=0;i<count;i++){
+        const gx = horizontal ? x + i*1.6 : x;
+        const gz = horizontal ? z : z + i*1.6;
+        addBox(group,gx,0.09,gz,horizontal?0.8:0.25,0.05,horizontal?0.25:0.8,0xced4da);
+      }
+    }
+
+    function addTree(group,x,z){
+      addBox(group,x,0.7,z,0.12,1.2,0.12,0xd8e3ef);
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.28,8), makeMat(0xdfe9f8));
+      c.position.set(x,1.55,z); group.add(c);
+    }
+
+    function addSteppedBuilding(group,x,z,w,d,h,levels,accent){
+      const base = addBox(group,x,h/2,z,w,h,d,0xe6edf7);
+      for(let i=1;i<levels;i++){
+        const scale = 1 - i*0.12;
+        addBox(group, x, h + i*0.45, z, w*scale, 0.34, d*scale, accent || 0x9fc8ff);
+      }
+      return base;
+    }
+
+    function buildScene(){
+      clearDynamic();
+      readParams();
+      simTime = 0;
+      exits = [];
+      obstacles = [];
+
+      const env = new THREE.Group(); env.name='envGroup'; scene.add(env);
+      const W = params.width, L = 44;
+
+      // Base ground and event lot
+      addBox(env,0,-0.25,0,70,0.5,70,0x08233f);
+      addBox(env,0,0.01,0,W+4,0.04,L+2,0x0b2747);
+
+      // Isometric city roads inspired by reference image
+      const roadColor = 0xf4f3ee;
+      addBox(env,-3,0.06,-2,48,0.12,4.2,roadColor);            // main cross road
+      addBox(env,14,0.06,8,4.2,0.12,40,roadColor);             // vertical road
+      addBox(env,-19,0.06,16,24,0.12,4.2,roadColor);           // lower left road
+      addBox(env,0,0.06,18,52,0.12,4.2,roadColor);             // bottom road
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2,0.9,10,28), makeMat(0xf4f3ee));
+      ring.rotation.x = Math.PI/2; ring.position.set(-9,0.08,18); env.add(ring);
+      addBox(env,-9,0.07,18,2.2,0.1,2.2,0x08233f);
+      addRoadStripe(env,-4,-2,4,true);
+      addRoadStripe(env,-27,16,4,true);
+      addRoadStripe(env,-1,18,5,true);
+      addRoadStripe(env,14,12,5,false);
+
+      // Venue plaza and corridor funnel
+      addBox(env,0,0.08,-9,W-4,0.12,15,0x11365d);
+      addBox(env,0,0.10,7,params.corridor,0.12,14,0x17446f);
+      for(const side of [-1,1]){
+        for(let z=0; z<15; z+=2.2){
+          addBox(env, side*params.corridor/2, 0.46, z, 0.12, 0.8, 1.6, 0xe5e7eb);
+        }
+      }
+
+      // Exits along bottom road
+      const spacing = params.width/(params.exitCount+1);
+      for(let i=0;i<params.exitCount;i++){
+        const x = -params.width/2 + spacing*(i+1);
+        exits.push(new THREE.Vector3(x,0,24));
+        addBox(env,x-params.exitWidth/2,1.1,20.1,0.18,2.2,0.18,0xdde8f4);
+        addBox(env,x+params.exitWidth/2,1.1,20.1,0.18,2.2,0.18,0xdde8f4);
+        addBox(env,x,2.15,20.1,params.exitWidth+0.36,0.18,0.18,0xdde8f4);
+      }
+
+      // Buildings inspired by reference image clusters
+      addSteppedBuilding(env,-5,-18,8,10,13,4,0x9fc8ff);
+      addSteppedBuilding(env,6,-18,8,7.5,10,5,0xb5d2ff);
+      addSteppedBuilding(env,-14,-11,5.5,6.2,6.2,3,0xa5c8ff);
+      addSteppedBuilding(env,-24,-7,4.5,4.5,7.2,5,0xb8d5ff);
+      addSteppedBuilding(env,-27,-1,4.5,4.5,7.2,5,0xb8d5ff);
+      addSteppedBuilding(env,-30,5,4.5,4.5,7.2,5,0xb8d5ff);
+      addSteppedBuilding(env,19,15,8,8,12.5,3,0xadd0ff);
+      addSteppedBuilding(env,25,15,8,8,12.5,3,0xadd0ff);
+      addSteppedBuilding(env,22,-3,7.5,6,4.5,2,0x9fc8ff);
+      addSteppedBuilding(env,14,-3,5,5,6,3,0xa7ccff);
+      addSteppedBuilding(env,9,-3,4.5,4.5,5,3,0x8abfff);
+      addSteppedBuilding(env,-23,28,4.5,3.5,1.4,2,0xa8ceff);
+      addSteppedBuilding(env,-18,28,4.5,3.5,1.4,2,0xa8ceff);
+      addSteppedBuilding(env,-13,28,4.5,3.5,1.4,2,0xa8ceff);
+
+      // Pavilion/event hall right top
+      addBox(env,28,0.8,-5,8,1.6,7,0xe5edf7);
+      addBox(env,28,1.45,-5,6.5,0.6,5.5,0x96c5ff);
+      addBox(env,28,2.1,-5,5.3,0.6,4.3,0xe5edf7);
+
+      // Trees and human-scale details
+      for(let z=-12; z<8; z+=3) addTree(env, 31, z);
+      for(let x=8; x<31; x+=2.6) addTree(env, x, 22.6);
+      for(let x=-2; x<17; x+=2.8) addTree(env, x, 22.6);
+      for(let x=-27; x<-12; x+=2.8) addTree(env, x, 22.6);
+      for(let x=-2; x<6; x+=1.6) addBox(env,x,0.25,-2.3,0.7,0.08,0.22,0xdbe6f2);
+      for(let x=-6; x<2; x+=1.6) addBox(env,x,0.25,18.0,0.7,0.08,0.22,0xdbe6f2);
+
+      // Obstacles/booths inside venue
+      const boothCount = Math.round(params.obstacle*8);
+      for(let i=0;i<boothCount;i++){
+        const x=(Math.random()-.5)*(W-8), z=-11+Math.random()*12;
+        const w = 1.4 + Math.random()*0.8;
+        addBox(env,x,0.85,z,w,1.7,w, i%2?0xe7eff8:0x9bc8ff);
+        obstacles.push({x,z,r:w*0.75 + 0.6});
+      }
+
+      buildHeatmap();
+      buildPeople();
+    }
+
+    function buildHeatmap(){
+      const group=new THREE.Group(); group.name='heatGroup'; scene.add(group); heatCells=[];
+      const W = Math.max(18, params.width+4), L = 40;
+      const x0 = -W/2, z0 = -16;
+      const cellW=W/gridN, cellL=L/gridN;
+      const geo=new THREE.PlaneGeometry(cellW*0.95, cellL*0.95);
+      for(let gz=0; gz<gridN; gz++){
+        for(let gx=0; gx<gridN; gx++){
+          const mat=new THREE.MeshBasicMaterial({color:0x22c55e, transparent:true, opacity:0.16, side:THREE.DoubleSide, depthWrite:false});
+          const m=new THREE.Mesh(geo,mat);
+          m.rotation.x=-Math.PI/2;
+          m.position.set(x0+cellW*(gx+0.5), 0.12, z0+cellL*(gz+0.5));
+          group.add(m);
+          heatCells.push({mesh:m,count:0,gx,gz,x0,z0,cellW,cellL,W,L});
+        }
+      }
+    }
+
+    function buildPeople(){
+      const group=new THREE.Group(); group.name='peopleGroup'; scene.add(group);
+      people=[];
+      const agentCount=Math.min(MAX_AGENTS, Math.max(70, Math.round(params.crowd/4.2)));
+      const geo = new THREE.CylinderGeometry(0.11,0.11,0.48,6);
+      const mat = new THREE.MeshLambertMaterial({color:0x22c55e});
+      crowdMesh = new THREE.InstancedMesh(geo, mat, agentCount);
+      group.add(crowdMesh);
+      crowdMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const dummy = new THREE.Object3D();
+      for(let i=0;i<agentCount;i++){
+        const x=(Math.random()-.5)*(params.width-5);
+        const z=-12 + Math.random()*12;
+        const p={x,z,vx:0,vz:0,panic:Math.random()<params.panic,reverse:Math.random()<params.reverse,phase:Math.random()*10};
+        people.push(p);
+        dummy.position.set(x,0.38,z); dummy.updateMatrix(); crowdMesh.setMatrixAt(i,dummy.matrix); crowdMesh.setColorAt(i,new THREE.Color(0x22c55e));
+      }
+      crowdMesh.instanceMatrix.needsUpdate=true;
+      crowdMesh.instanceColor.needsUpdate=true;
+    }
+
+    function nearestExit(p){
+      let target=exits[0], d=Infinity;
+      for(const e of exits){const dd=(p.x-e.x)**2 + (p.z-e.z)**2; if(dd<d){d=dd; target=e;}}
+      return target;
+    }
+
+    function updateSimulation(dt){
+      if(!running) return;
+      simTime += dt;
+      const W = Math.max(18, params.width+4), L = 40, x0 = -W/2, z0 = -16;
+      const bins = Array.from({length:gridN*gridN},()=>[]);
+      const scale=params.crowd/people.length;
+
+      for(let i=0;i<people.length;i++){
+        const p=people[i];
+        const gx=Math.max(0,Math.min(gridN-1,Math.floor((p.x-x0)/W*gridN)));
+        const gz=Math.max(0,Math.min(gridN-1,Math.floor((p.z-z0)/L*gridN)));
+        bins[gz*gridN+gx].push(i);
+      }
+      heatCells.forEach((c,i)=>c.count = bins[i].length * scale);
+
+      const cellArea=(W/gridN)*(L/gridN);
+      const densities = heatCells.map(c=>c.count/cellArea);
+      let maxDensity=0, high=0;
+      densities.forEach((d,i)=>{
+        maxDensity=Math.max(maxDensity,d);
+        const col=d<2?0x22c55e:d<4?0xfacc15:d<5.5?0xf97316:d<7?0xef4444:0xa855f7;
+        heatCells[i].mesh.material.color.setHex(col);
+        heatCells[i].mesh.material.opacity=Math.min(0.58,0.12+d*0.06);
+      });
+
+      const dummy = new THREE.Object3D();
+      const boundX = params.width/2 - 0.6;
+      for(let i=0;i<people.length;i++){
+        const p=people[i];
+        const target = p.reverse ? new THREE.Vector3(0,0,-14) : nearestExit(p);
+        let dx=target.x-p.x, dz=target.z-p.z; const len=Math.hypot(dx,dz)||1; dx/=len; dz/=len;
+        let desired = params.speed*(0.65+params.surge*0.85)*(p.panic?1.35:1);
+        let fx=dx*desired, fz=dz*desired;
+
+        const gx=Math.max(0,Math.min(gridN-1,Math.floor((p.x-x0)/W*gridN)));
+        const gz=Math.max(0,Math.min(gridN-1,Math.floor((p.z-z0)/L*gridN)));
+        for(let zz=Math.max(0,gz-1); zz<=Math.min(gridN-1,gz+1); zz++){
+          for(let xx=Math.max(0,gx-1); xx<=Math.min(gridN-1,gx+1); xx++){
+            for(const j of bins[zz*gridN+xx]) if(j!==i){
+              const q=people[j]; const rx=p.x-q.x, rz=p.z-q.z; const rd=Math.hypot(rx,rz);
+              if(rd<0.7 && rd>0.001){
+                const repel=(0.7-rd)*(p.panic?0.8:1.4); fx += rx/rd*repel; fz += rz/rd*repel;
+              }
+            }
+          }
+        }
+        for(const o of obstacles){
+          const rx=p.x-o.x, rz=p.z-o.z, rd=Math.hypot(rx,rz);
+          if(rd<o.r+0.8){ fx += rx/(rd||1)*1.8; fz += rz/(rd||1)*1.8; }
+        }
+
+        // Corridor funnel pressure and edge constraint
+        if(p.z>0 && p.z<18 && Math.abs(p.x) > params.corridor/2 - 0.35){
+          fx += -Math.sign(p.x)*0.9;
+        }
+        p.vx += (fx-p.vx)*Math.min(1,dt*2.3);
+        p.vz += (fz-p.vz)*Math.min(1,dt*2.3);
+        p.x += p.vx*dt;
+        p.z += p.vz*dt + Math.tan(params.slope*Math.PI/180)*0.02;
+
+        p.x = Math.max(-boundX, Math.min(boundX, p.x));
+        if(p.z > 25){
+          p.z = -14 + Math.random()*5;
+          p.x = (Math.random()-.5)*(params.width-5);
+          p.reverse = Math.random() < params.reverse;
+        }
+        if(p.z < -15){ p.z = -15; p.reverse=false; }
+
+        const idx=Math.max(0,Math.min(densities.length-1,gz*gridN+gx));
+        const density=densities[idx];
+        if(density>=5.5) high += scale;
+        const col=density<2?0x22c55e:density<4?0xfacc15:density<5.5?0xf97316:density<7?0xef4444:0xa855f7;
+        dummy.position.set(p.x,0.36+Math.sin(simTime*5+p.phase)*0.02,p.z);
+        dummy.rotation.y = Math.atan2(p.vx,p.vz);
+        dummy.updateMatrix();
+        crowdMesh.setMatrixAt(i,dummy.matrix);
+        crowdMesh.setColorAt(i,new THREE.Color(col));
+      }
+      crowdMesh.instanceMatrix.needsUpdate=true;
+      crowdMesh.instanceColor.needsUpdate=true;
+
+      const exitCapacity=params.exitCount*params.exitWidth*1.3*60;
+      const demand=params.crowd*(0.25+params.surge*0.75);
+      const load=Math.min(300,demand/Math.max(1,exitCapacity)*100*(1+params.panic*0.65+params.reverse*0.4+params.obstacle*0.5));
+      const evac=params.crowd/Math.max(1,exitCapacity)*(1+Math.max(0,load-100)/120+params.panic*0.7+params.slope*0.025);
+      updateStats(maxDensity, evac, load, Math.round(high));
+    }
+
+    function updateStats(density,evac,load,high){
+      $('densityStat').textContent=density.toFixed(1);
+      $('evacStat').textContent=evac.toFixed(1);
+      $('loadStat').textContent=Math.round(load);
+      $('highStat').textContent=high.toLocaleString();
+      let grade,desc,color,bg;
+      if(density<2.5 && load<80){ grade='안정'; desc='현재 조건에서 원활한 이동 예상'; color='#22c55e'; bg='#10271a'; }
+      else if(density<4 && load<110){ grade='주의'; desc='병목 구간에 안전요원 배치 필요'; color='#facc15'; bg='#2a260d'; }
+      else if(density<5.5 && load<150){ grade='위험'; desc='출구 분산·유입 통제가 필요'; color='#f97316'; bg='#301b0d'; }
+      else if(density<7.5 && load<220){ grade='매우 위험'; desc='즉시 군중 흐름을 중단·분산해야 함'; color='#ef4444'; bg='#321013'; }
+      else { grade='임계'; desc='압사 위험 가능성: 긴급 통제 필요'; color='#c084fc'; bg='#24102f'; }
+      const box=$('riskBox'); box.style.background=bg; box.style.borderColor=color; $('riskGrade').style.color=color; $('riskGrade').textContent=grade; $('riskDesc').textContent=desc;
+      const alert=$('alertBanner'); alert.style.display=(grade==='매우 위험'||grade==='임계')?'block':'none';
+      alert.textContent=grade==='임계' ? '임계 밀집 발생 — 즉시 흐름 통제' : '고위험 밀집 발생';
+    }
+
+    function applyPreset(){
+      const p=els.preset.value;
+      const s={
+        normal:[700,45,1.1,5,3,28,8,3,3.2,5,1],
+        ending:[1400,90,1.5,20,5,26,7,2,2.6,10,2],
+        blocked:[1200,80,1.4,25,8,24,5,1,2.2,15,3],
+        panic:[1600,95,1.9,60,30,22,5,2,2.0,20,4],
+        narrow:[1000,75,1.3,25,10,14,3.5,1,1.8,25,6]
+      }[p];
+      [els.crowd,els.surge,els.speed,els.panic,els.reverse,els.width,els.corridor,els.exitCount,els.exitWidth,els.obstacle,els.slope].forEach((e,i)=>e.value=s[i]);
+      buildScene();
+    }
+
+    function bindUI(){
+      Object.values(els).forEach(el=>{ if(el && el.type==='range') el.addEventListener('input', ()=>{ readParams(); buildScene(); }); });
+      els.preset.addEventListener('change', applyPreset);
+      els.toggle.addEventListener('click', ()=>{ running=!running; els.toggle.textContent = running ? '일시정지' : '계속'; });
+      els.reset.addEventListener('click', buildScene);
+      $('menuBtn').addEventListener('click', ()=>$('sidebar').classList.toggle('open'));
+      addEventListener('resize', ()=>{
+        camera.aspect = stage.clientWidth/innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(stage.clientWidth, innerHeight);
+      });
+    }
+
+    function bindPointerControls(){
+      const canvas = renderer.domElement;
+      canvas.addEventListener('pointerdown', e=>{ orbit.dragging=true; orbit.px=e.clientX; orbit.py=e.clientY; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener('pointermove', e=>{
+        if(!orbit.dragging) return;
+        const dx=e.clientX-orbit.px, dy=e.clientY-orbit.py;
+        orbit.px=e.clientX; orbit.py=e.clientY;
+        orbit.theta -= dx*0.008;
+        orbit.phi = Math.max(0.5, Math.min(1.45, orbit.phi + dy*0.006));
+      });
+      canvas.addEventListener('pointerup', ()=>orbit.dragging=false);
+      canvas.addEventListener('pointerleave', ()=>orbit.dragging=false);
+      canvas.addEventListener('wheel', e=>{
+        e.preventDefault(); orbit.radius = Math.max(28, Math.min(80, orbit.radius + e.deltaY*0.03));
+      }, {passive:false});
+      canvas.addEventListener('contextmenu', e=>e.preventDefault());
+    }
+
+    function updateCamera(){
+      const sinPhi = Math.sin(orbit.phi), cosPhi = Math.cos(orbit.phi);
+      camera.position.set(
+        orbit.target.x + orbit.radius * sinPhi * Math.sin(orbit.theta),
+        orbit.target.y + orbit.radius * cosPhi,
+        orbit.target.z + orbit.radius * sinPhi * Math.cos(orbit.theta)
+      );
+      camera.lookAt(orbit.target);
+    }
+
+    function animate(){
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.033, clock.getDelta());
+      updateSimulation(dt);
+      updateCamera();
+      renderer.render(scene,camera);
+      const m=Math.floor(simTime/60), s=Math.floor(simTime%60);
+      $('timeBadge').textContent = `경과 ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    init();
+  </script>
+</body>
+</html>
